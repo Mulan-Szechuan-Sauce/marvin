@@ -1,0 +1,2 @@
+1:1-1:1::Main.$trModule :: "GHC.Types.Module"
+6:1-6:5:::Main.main :: "(GHC.Types.IO ())"

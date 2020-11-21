@@ -1,0 +1,83 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.34.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 671b9f4591621134ace93d4dc1003cb6ac306e177c9945db156b8d07de9b6a82
+
+name:           marvin
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/marvin#readme>
+homepage:       https://github.com/Mulan-Szechuan-Sauce/marvin#readme
+bug-reports:    https://github.com/Mulan-Szechuan-Sauce/marvin/issues
+author:         Elijah Mirecki & Josh Wolfe
+maintainer:     shhh@dontemailus.web
+copyright:      2020 Elijah Mirecki & Josh Wolfe
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/Mulan-Szechuan-Sauce/marvin
+
+library
+  exposed-modules:
+      Lib
+  other-modules:
+      Paths_marvin
+  hs-source-dirs:
+      src
+  build-depends:
+      discord-haskell
+    , lens
+    , liquid-base
+    , liquidhaskell >=0.8.10
+    , random
+    , text
+    , transformers
+    , unliftio
+  default-language: Haskell2010
+
+executable marvin-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_marvin
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -fplugin=LiquidHaskell
+  build-depends:
+      discord-haskell
+    , lens
+    , liquid-base
+    , liquidhaskell >=0.8.10
+    , marvin
+    , random
+    , text
+    , transformers
+    , unliftio
+  default-language: Haskell2010
+
+test-suite marvin-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_marvin
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      discord-haskell
+    , lens
+    , liquid-base
+    , liquidhaskell >=0.8.10
+    , marvin
+    , random
+    , text
+    , transformers
+    , unliftio
+  default-language: Haskell2010

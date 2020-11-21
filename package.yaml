@@ -1,0 +1,56 @@
+name:                marvin
+version:             0.1.0.0
+github:              "Mulan-Szechuan-Sauce/marvin"
+license:             MIT
+author:              "Elijah Mirecki & Josh Wolfe"
+maintainer:          "shhh@dontemailus.web"
+copyright:           "2020 Elijah Mirecki & Josh Wolfe"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/marvin#readme>
+
+dependencies:
+- discord-haskell
+- liquid-base
+- liquidhaskell >= 0.8.10
+- text
+- unliftio
+- lens
+- random
+- transformers
+
+library:
+  source-dirs: src
+
+executables:
+  marvin-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    - -fplugin=LiquidHaskell
+    dependencies:
+    - marvin
+
+tests:
+  marvin-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - marvin

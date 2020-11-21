@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 671b9f4591621134ace93d4dc1003cb6ac306e177c9945db156b8d07de9b6a82
+-- hash: 99db13b12e47373e9d418801068a158d32ee44da5b5925218af41c58427107be
 
 name:           marvin
 version:        0.1.0.0
@@ -33,10 +33,9 @@ library
   hs-source-dirs:
       src
   build-depends:
-      discord-haskell
+      base >=4.13
+    , discord-haskell
     , lens
-    , liquid-base
-    , liquidhaskell >=0.8.10
     , random
     , text
     , transformers
@@ -49,12 +48,11 @@ executable marvin-exe
       Paths_marvin
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -fplugin=LiquidHaskell
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      discord-haskell
+      base >=4.13
+    , discord-haskell
     , lens
-    , liquid-base
-    , liquidhaskell >=0.8.10
     , marvin
     , random
     , text
@@ -71,10 +69,9 @@ test-suite marvin-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      discord-haskell
+      base >=4.13
+    , discord-haskell
     , lens
-    , liquid-base
-    , liquidhaskell >=0.8.10
     , marvin
     , random
     , text

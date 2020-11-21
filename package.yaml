@@ -21,8 +21,7 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - discord-haskell
-- liquid-base
-- liquidhaskell >= 0.8.10
+- base >= 4.13
 - text
 - unliftio
 - lens
@@ -40,7 +39,6 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    - -fplugin=LiquidHaskell
     dependencies:
     - marvin
 

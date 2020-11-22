@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 99db13b12e47373e9d418801068a158d32ee44da5b5925218af41c58427107be
+-- hash: 23dda4505a5ecbac4efe3e25d17ae2162bcb6e19102a40259de418841d47b28c
 
 name:           marvin
 version:        0.1.0.0
@@ -32,10 +32,13 @@ library
       Paths_marvin
   hs-source-dirs:
       src
+  default-extensions: DataKinds FlexibleContexts GADTs LambdaCase PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeOperators TypeFamilies
   build-depends:
       base >=4.13
     , discord-haskell
     , lens
+    , polysemy
+    , polysemy-plugin
     , random
     , text
     , transformers
@@ -48,12 +51,14 @@ executable marvin-exe
       Paths_marvin
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -fplugin=Polysemy.Plugin -O2 -flate-specialise -fspecialise-aggressively
   build-depends:
       base >=4.13
     , discord-haskell
     , lens
     , marvin
+    , polysemy
+    , polysemy-plugin
     , random
     , text
     , transformers
@@ -73,6 +78,8 @@ test-suite marvin-test
     , discord-haskell
     , lens
     , marvin
+    , polysemy
+    , polysemy-plugin
     , random
     , text
     , transformers

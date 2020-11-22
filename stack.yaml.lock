@@ -18,6 +18,13 @@ packages:
       sha256: cfb24b8f065a15db36b7bdb442970cddf36f7c91f18eb2fca4a835f94f24f9a1
   original:
     hackage: discord-haskell-1.8.1
+- completed:
+    hackage: polysemy-plugin-0.2.5.2@sha256:649cea55749c38af841e9f3750ccf65be351e597f3085234e28e3491e78d1f78,3155
+    pantry-tree:
+      size: 1162
+      sha256: 20b462f8095a8108ef4d920f0d494ba1299821403ad30169168f4b1968b06c2a
+  original:
+    hackage: polysemy-plugin-0.2.5.2
 snapshots:
 - completed:
     size: 532377

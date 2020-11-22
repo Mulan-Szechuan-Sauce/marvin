@@ -42,6 +42,7 @@ packages:
 extra-deps:
 - emoji-0.1.0.2
 - discord-haskell-1.8.1
+- polysemy-plugin-0.2.5.2
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

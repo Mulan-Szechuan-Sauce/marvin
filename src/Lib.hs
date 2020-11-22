@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, TemplateHaskell #-}
 module Lib (bootstrapBot) where
 
 import System.Environment (getEnv)
@@ -9,6 +9,7 @@ import Data.Either
 import Data.Maybe
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Text.Read (decimal)
+import Control.Applicative
 
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
@@ -16,14 +17,39 @@ import qualified Data.Text.IO as TIO
 
 import UnliftIO
 
-import Discord
-import Discord.Types
+import Polysemy 
+import Polysemy.Fail
+import Polysemy.IO
+import Discord 
+import Discord.Types hiding (Embed)
+import Discord.Internal.Rest.Prelude (Request)
 import qualified Discord.Requests as R
 import Control.Lens
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.Class
 
+import Polysemy.State
+
+data DiscordEff m a where
+  CallDiscord :: (FromJSON a, Request (r a))
+              => r a
+              -> DiscordEff m (Either RestCallErrorCode a)
+
+(makeSem ''DiscordEff)
+
+discordEffToHandler :: Member (Embed DiscordHandler) r => Sem (DiscordEff ': r) a -> Sem r a
+discordEffToHandler = interpret $ \x ->
+  case x of
+    CallDiscord msg -> embed $ restCall msg
+
 type MaybeD a = MaybeT DiscordHandler a
+
+data Command = Command
+  { _input :: NonEmpty Text
+  , _message :: Message
+  } deriving (Show)
+
+(makeLenses ''Command)
 
 bootstrapBot :: IO ()
 bootstrapBot = do
@@ -33,11 +59,17 @@ bootstrapBot = do
   TIO.putStrLn userFacingError
 
 eventHandler :: Event -> DiscordHandler ()
-eventHandler event = case event of
-  MessageCreate m -> when (not (fromBot m)) $ handleMessage m
-  _ -> pure ()
+eventHandler event =
+  case event of
+    MessageCreate m -> when (not (fromBot m))
+      $ runM
+      . embedToMonadIO @DiscordHandler
+      . discordEffToHandler
+      $ handleMessage m
+    _ -> pure ()
 
-handleMessage :: Message -> DiscordHandler ()
+handleMessage :: Members '[DiscordEff, Embed IO] r
+              => Message -> Sem r ()
 handleMessage m = do
   case nomPrefix $ messageText m of
     Just query ->
@@ -57,16 +89,17 @@ handleMessage m = do
       else
         Nothing
 
-respond :: NonEmpty Text -> Message -> DiscordHandler ()
+respond :: Members '[Embed IO, DiscordEff] r
+        => NonEmpty Text -> Message -> Sem r ()
 respond ("I" :| ["don't", "like", "that"]) m = do
   sendText m "I'm very sorry to hear that :cry:"
 respond ("shuffle" :| args) m = do
-  shuffled <- liftIO $ shuffle args
+  shuffled <- shuffle args
   sendText m (T.intercalate "\n" $ ("- " <>) <$> shuffled)
 respond ("groupby" :| args) m = finish m "groupby <number> ..." $ do
   num <- getArg 0 args >>= intArg
-  shuffled <- liftIO $ shuffle $ drop 1 args
-  sendTextD m $ formatTeams $ chunk num shuffled
+  shuffled <- shuffle $ drop 1 args
+  sendText m $ formatTeams $ chunk num shuffled
 
   where
     formatTeams :: [[Text]] -> Text
@@ -93,9 +126,9 @@ respond ("roll" :| args) m = finish m "roll <number>" $ do
   gaurd $ length args == 1
   cardinality <- getArg 0 args >>= intArg . trimD
 
-  reactD m "game_die"
+  react m "game_die"
   randInt <- liftIO $ randomRIO (1, cardinality)
-  sendTextD m $ T.pack $ show randInt
+  sendText m $ T.pack $ show randInt
 
   where
     trimD :: Text -> Text
@@ -103,44 +136,51 @@ respond ("roll" :| args) m = finish m "roll <number>" $ do
       then T.tail t
       else t
 
-finish :: Message -> Text -> MaybeD () -> DiscordHandler ()
+finish :: Member DiscordEff r
+       => Message -> Text -> Sem (Fail ': r) () -> Sem r ()
 finish m message action = do
-  mayb <- runMaybeT action
-  when (isNothing mayb) $ sendText m $ "**Usage:** `" <> message <> "`" 
+  res <- runFail action
+  when (isLeft res) $ sendText m $ "**Usage:** `" <> message <> "`" 
   pure ()
 
-reactD :: Message -> Text -> MaybeD ()
-reactD m reaction = do
-  lift $ restCall (R.CreateReaction (messageChannel m, messageId m) reaction)
+choice :: Member Fail r
+       => [Sem (Fail ': r) a] -> Sem r (Either String a)
+choice [] = pure $ Left "o no"
+choice (x:xs) = liftA2 (<|>) (runFail x) (choice xs)
+
+react :: Member DiscordEff r => Message -> Text -> Sem r ()
+react m reaction = do
+  callDiscord (R.CreateReaction (messageChannel m, messageId m) reaction)
   pure ()
 
-sendTextD :: Message -> Text -> MaybeD ()
-sendTextD m t = lift $ sendText m t
+sendText :: Member DiscordEff r
+            => Message -> Text -> Sem r ()
+sendText m t = callDiscord (R.CreateMessage (messageChannel m) t) *> pure ()
 
-sendText :: Message -> Text -> DiscordHandler ()
-sendText m t = restCall (R.CreateMessage (messageChannel m) t) *> pure ()
-
-gaurd :: Bool -> MaybeD ()
+gaurd :: Member Fail r
+      => Bool -> Sem r ()
 gaurd True  = pure ()
-gaurd False = hoistMaybe Nothing
+gaurd False = fail "Gaurd failed"
 
-getArg :: Int -> [Text] -> MaybeD Text
-getArg index args = hoistMaybe $ args ^? element index
+getArg :: Member Fail r => Int -> [Text] -> Sem r Text
+getArg index args = maybeToFail "Arg index not avaliable" $ args ^? element index
 
-intArg :: Text -> MaybeD Int
-intArg arg = hoistMaybe $ decimal arg ^? _Right . _1
+intArg :: Member Fail r => Text -> Sem r Int
+intArg arg = maybeToFail "Arg is not an int" $ decimal arg ^? _Right . _1
 
-hoistMaybe :: Applicative m => Maybe a -> MaybeT m a
-hoistMaybe = MaybeT . pure
+maybeToFail :: Member Fail r
+            => String -> Maybe a -> Sem r a
+maybeToFail message Nothing = fail message
+maybeToFail _ (Just x)      = pure x
 
 fromBot :: Message -> Bool
 fromBot m = userIsBot (messageAuthor m)
 
-shuffle :: [a] -> IO [a]
+shuffle :: Members '[Embed IO] r => [a] -> Sem r [a]
 shuffle []  = pure []
 shuffle [x] = pure [x]
 shuffle lst = do
-  position <- randomRIO (0, length lst - 1)
+  position <- embed $ randomRIO (0, length lst - 1)
   let (before, after) = splitAt position lst
   s <- shuffle (before <> tail after)
   pure $ head after:s

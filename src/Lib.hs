@@ -69,7 +69,8 @@ handleMessage m = do
         [ respondShuffle,
           respondDontLikeThat,
           respondGroupBy,
-          respondRoll
+          respondRoll,
+          respondFlip
         ]
   case nomPrefix $ messageText m of
     Just query ->
@@ -138,7 +139,7 @@ respondRoll ("roll" :| args) m = finish m "roll <number>" $ do
   cardinality <- getArg 0 args >>= intArg . trimD
 
   react m "game_die"
-  randInt <- liftIO $ randomRIO (1, cardinality)
+  randInt <- embed $ randomRIO (1, cardinality)
   sendText m $ T.pack $ show randInt
 
   where
@@ -147,6 +148,18 @@ respondRoll ("roll" :| args) m = finish m "roll <number>" $ do
       then T.tail t
       else t
 respondRoll _ _ = failUnmatchedArgs
+
+respondFlip :: Command '[Embed IO]
+respondFlip ("flip" :| args) m = finish m "flip" $ do
+  gaurd $ length args == 0
+  randInt <- embed $ randomRIO (1 :: Int, 2)
+
+  react m "coin"
+  sendText m $ if randInt == 1 then
+    "Heads :upside_down:"
+  else
+    "Tails :peach:"
+respondFlip _ _ = failUnmatchedArgs
 
 finish :: Member DiscordEff r
        => Message -> Text -> Sem (Fail ': r) () -> Sem r ()

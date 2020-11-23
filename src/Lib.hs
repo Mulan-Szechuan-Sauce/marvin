@@ -17,18 +17,25 @@ import qualified Data.Text.IO as TIO
 
 import UnliftIO
 
-import Polysemy 
+import Polysemy
 import Polysemy.Fail
+import Polysemy.Reader
 import Polysemy.IO
-import Discord 
+
+import Discord
 import Discord.Types hiding (Embed)
 import Discord.Internal.Rest.Prelude (Request)
 import qualified Discord.Requests as R
 import Control.Lens
-import Control.Monad.Trans.Maybe
-import Control.Monad.Trans.Class
 
 import Polysemy.State
+
+data CmdInfo = CmdInfo
+  { _message :: Message
+  , _name :: Text
+  , _args :: [Text] }
+
+(makeLenses ''CmdInfo)
 
 data DiscordEff m a where
   CallDiscord :: (FromJSON a, Request (r a))
@@ -37,13 +44,14 @@ data DiscordEff m a where
 
 (makeSem ''DiscordEff)
 
-discordEffToHandler :: Member (Embed DiscordHandler) r => Sem (DiscordEff ': r) a -> Sem r a
+discordEffToHandler :: Member (Embed DiscordHandler) r
+                    => Sem (DiscordEff ': r) a -> Sem r a
 discordEffToHandler = interpret $ \x ->
   case x of
     CallDiscord msg -> embed $ restCall msg
 
-type Command a = forall r. (Members '[DiscordEff, Fail] r, Members a r)
-             => NonEmpty Text -> Message -> Sem r ()
+type Command a = forall r.
+  (Members '[DiscordEff, Fail, Reader CmdInfo] r, Members a r) => Sem r ()
 
 bootstrapBot :: IO ()
 bootstrapBot = do
@@ -74,9 +82,9 @@ handleMessage m = do
         ]
   case nomPrefix $ messageText m of
     Just query ->
-      case NE.nonEmpty $ T.words query of
-        Just args -> () <$ choice [f args m | f <- commands]
-        _         -> pure ()
+      case T.words query of
+        (name:args) -> () <$ choice (runReader (CmdInfo m name args) <$> commands)
+        _           -> pure ()
     _ -> pure ()
   where
     nomPrefix :: Text -> Maybe Text
@@ -93,22 +101,33 @@ handleMessage m = do
 failUnmatchedArgs :: Members '[Fail] r => Sem r ()
 failUnmatchedArgs = fail "Unmatched args"
 
+gaurdName :: Members '[Fail, Reader CmdInfo] r => Text -> Sem r ()
+gaurdName expected = do
+  actual <- view name <$> ask
+  gaurd $ expected == T.toLower actual
+
 respondShuffle :: Command '[Embed IO]
-respondShuffle ("shuffle" :| args) m = do
-  shuffled <- shuffle args
-  sendText m (T.intercalate "\n" $ ("- " <>) <$> shuffled)
-respondShuffle _ _ = failUnmatchedArgs
+respondShuffle = do
+  gaurdName "shuffle"
+  m        <- view name <$> ask
+  shuffled <- view args <$> ask >>= shuffle
+  sendText (T.intercalate "\n" $ ("- " <>) <$> shuffled)
 
 respondDontLikeThat :: Command '[]
-respondDontLikeThat ("I" :| ["don't", "like", "that"]) m = do
-  sendText m "I'm very sorry to hear that :cry:"
-respondDontLikeThat _ _ = failUnmatchedArgs
+respondDontLikeThat = do
+  name <- view name <$> ask
+  args <- view args <$> ask
+  gaurd $ ["i", "don't", "like", "that"] == (T.toLower <$> name:args)
+
+  sendText "I'm very sorry to hear that :cry:"
 
 respondGroupBy :: Command '[Embed IO]
-respondGroupBy ("groupby" :| args) m = finish m "groupby <number> ..." $ do
+respondGroupBy = finish "groupby" "<number> ..." $ do
+  args <- view args <$> ask
+
   num <- getArg 0 args >>= intArg
   shuffled <- shuffle $ drop 1 args
-  sendText m $ formatTeams $ chunk num shuffled
+  sendText $ formatTeams $ chunk num shuffled
 
   where
     formatTeams :: [[Text]] -> Text
@@ -131,55 +150,60 @@ respondGroupBy ("groupby" :| args) m = finish m "groupby <number> ..." $ do
     chunk' d r l =
       let (ys, zs) = splitAt (d + 1) l
       in  ys : chunk' d (r - 1) zs
-respondGroupBy _ _ = failUnmatchedArgs
 
 respondRoll :: Command '[Embed IO]
-respondRoll ("roll" :| args) m = finish m "roll <number>" $ do
+respondRoll = finish "roll" "<number>" $ do
+  args <- view args <$> ask
+
   gaurd $ length args == 1
   cardinality <- getArg 0 args >>= intArg . trimD
 
-  react m "game_die"
+  react "game_die"
   randInt <- embed $ randomRIO (1, cardinality)
-  sendText m $ T.pack $ show randInt
+  sendText $ T.pack $ show randInt
 
   where
     trimD :: Text -> Text
     trimD t = if T.head t == 'd'
       then T.tail t
       else t
-respondRoll _ _ = failUnmatchedArgs
 
 respondFlip :: Command '[Embed IO]
-respondFlip ("flip" :| args) m = finish m "flip" $ do
+respondFlip = finish "flip" "" $ do
+  args <- view args <$> ask
+
   gaurd $ length args == 0
   randInt <- embed $ randomRIO (1 :: Int, 2)
 
-  react m "coin"
-  sendText m $ if randInt == 1 then
+  react "\129689" -- Coin
+  sendText $ if randInt == 1 then
     "Heads :upside_down:"
   else
     "Tails :peach:"
-respondFlip _ _ = failUnmatchedArgs
 
-finish :: Member DiscordEff r
-       => Message -> Text -> Sem (Fail ': r) () -> Sem r ()
-finish m message action = do
+finish :: Members '[DiscordEff, Reader CmdInfo, Fail] r
+       => Text -> Text -> Sem (Fail ': r) () -> Sem r ()
+finish name usage action = do
+  gaurdName name
   res <- runFail action
-  when (isLeft res) $ sendText m $ "**Usage:** `" <> message <> "`" 
+  when (isLeft res) $ sendText $ "**Usage:** `" <> name <> " " <> usage <> "`"
   pure ()
 
 choice :: [Sem (Fail ': r) a] -> Sem r (Either String a)
 choice [] = pure $ Left "o no"
 choice (x:xs) = liftA2 (<|>) (runFail x) (choice xs)
 
-react :: Member DiscordEff r => Message -> Text -> Sem r ()
-react m reaction = do
+react :: Members '[DiscordEff, Reader CmdInfo] r => Text -> Sem r ()
+react reaction = do
+  m <- view message <$> ask
   callDiscord (R.CreateReaction (messageChannel m, messageId m) reaction)
   pure ()
 
-sendText :: Member DiscordEff r
-            => Message -> Text -> Sem r ()
-sendText m t = callDiscord (R.CreateMessage (messageChannel m) t) *> pure ()
+sendText :: Members '[DiscordEff, Reader CmdInfo] r
+         => Text -> Sem r ()
+sendText t = do
+  m <- view message <$> ask
+  callDiscord (R.CreateMessage (messageChannel m) t) *> pure ()
 
 gaurd :: Member Fail r
       => Bool -> Sem r ()

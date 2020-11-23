@@ -42,14 +42,8 @@ discordEffToHandler = interpret $ \x ->
   case x of
     CallDiscord msg -> embed $ restCall msg
 
-type MaybeD a = MaybeT DiscordHandler a
-
-data Command = Command
-  { _input :: NonEmpty Text
-  , _message :: Message
-  } deriving (Show)
-
-(makeLenses ''Command)
+type Command a = forall r. (Members '[DiscordEff, Fail] r, Members a r)
+             => NonEmpty Text -> Message -> Sem r ()
 
 bootstrapBot :: IO ()
 bootstrapBot = do
@@ -71,10 +65,16 @@ eventHandler event =
 handleMessage :: Members '[DiscordEff, Embed IO] r
               => Message -> Sem r ()
 handleMessage m = do
+  let commands =
+        [ respondShuffle,
+          respondDontLikeThat,
+          respondGroupBy,
+          respondRoll
+        ]
   case nomPrefix $ messageText m of
     Just query ->
       case NE.nonEmpty $ T.words query of
-        Just args -> respond args m
+        Just args -> () <$ choice [f args m | f <- commands]
         _         -> pure ()
     _ -> pure ()
   where
@@ -89,14 +89,22 @@ handleMessage m = do
       else
         Nothing
 
-respond :: Members '[Embed IO, DiscordEff] r
-        => NonEmpty Text -> Message -> Sem r ()
-respond ("I" :| ["don't", "like", "that"]) m = do
-  sendText m "I'm very sorry to hear that :cry:"
-respond ("shuffle" :| args) m = do
+failUnmatchedArgs :: Members '[Fail] r => Sem r ()
+failUnmatchedArgs = fail "Unmatched args"
+
+respondShuffle :: Command '[Embed IO]
+respondShuffle ("shuffle" :| args) m = do
   shuffled <- shuffle args
   sendText m (T.intercalate "\n" $ ("- " <>) <$> shuffled)
-respond ("groupby" :| args) m = finish m "groupby <number> ..." $ do
+respondShuffle _ _ = failUnmatchedArgs
+
+respondDontLikeThat :: Command '[]
+respondDontLikeThat ("I" :| ["don't", "like", "that"]) m = do
+  sendText m "I'm very sorry to hear that :cry:"
+respondDontLikeThat _ _ = failUnmatchedArgs
+
+respondGroupBy :: Command '[Embed IO]
+respondGroupBy ("groupby" :| args) m = finish m "groupby <number> ..." $ do
   num <- getArg 0 args >>= intArg
   shuffled <- shuffle $ drop 1 args
   sendText m $ formatTeams $ chunk num shuffled
@@ -111,18 +119,21 @@ respond ("groupby" :| args) m = finish m "groupby <number> ..." $ do
       "**Group " <> T.pack (show teamNum) <> "**: " <> T.intercalate ", " members
 
     chunk :: Int -> [a] -> [[a]]
-    chunk numChunks l =
-      let len = toRational (length l)
-          nc  = toRational numChunks
-      in chunk' (ceiling $ len / nc) l
+    chunk n l = chunk' d r l
+      where (d, r) = divMod (length l) n
 
-    chunk' :: Int -> [a] -> [[a]]
-    chunk' _ [] = []
-    chunk' n xs =
-      let (ys, zs) = splitAt n xs
-      in  ys : chunk' n zs
+    chunk' :: Int -> Int -> [a] -> [[a]]
+    chunk' _ _ [] = []
+    chunk' d r l | r == 0 =
+      let (ys, zs) = splitAt d l
+      in  ys : chunk' d r zs
+    chunk' d r l =
+      let (ys, zs) = splitAt (d + 1) l
+      in  ys : chunk' d (r - 1) zs
+respondGroupBy _ _ = failUnmatchedArgs
 
-respond ("roll" :| args) m = finish m "roll <number>" $ do
+respondRoll :: Command '[Embed IO]
+respondRoll ("roll" :| args) m = finish m "roll <number>" $ do
   gaurd $ length args == 1
   cardinality <- getArg 0 args >>= intArg . trimD
 
@@ -135,6 +146,7 @@ respond ("roll" :| args) m = finish m "roll <number>" $ do
     trimD t = if T.head t == 'd'
       then T.tail t
       else t
+respondRoll _ _ = failUnmatchedArgs
 
 finish :: Member DiscordEff r
        => Message -> Text -> Sem (Fail ': r) () -> Sem r ()
@@ -143,8 +155,7 @@ finish m message action = do
   when (isLeft res) $ sendText m $ "**Usage:** `" <> message <> "`" 
   pure ()
 
-choice :: Member Fail r
-       => [Sem (Fail ': r) a] -> Sem r (Either String a)
+choice :: [Sem (Fail ': r) a] -> Sem r (Either String a)
 choice [] = pure $ Left "o no"
 choice (x:xs) = liftA2 (<|>) (runFail x) (choice xs)
 

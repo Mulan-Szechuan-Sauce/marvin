@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings, TemplateHaskell #-}
 module Lib (bootstrapBot) where
 
 import System.Environment (getEnv)
@@ -28,7 +27,7 @@ import Discord.Internal.Rest.Prelude (Request)
 import qualified Discord.Requests as R
 import Control.Lens
 
-import Polysemy.State
+import Database
 
 data CmdInfo = CmdInfo
   { _message :: Message
@@ -50,12 +49,22 @@ discordEffToHandler = interpret $ \x ->
   case x of
     CallDiscord msg -> embed $ restCall msg
 
-type Command a = forall r.
-  (Members '[DiscordEff, Fail, Reader CmdInfo] r, Members a r) => Sem r ()
+data DbEff m a where
+  InsertWords :: Text -> [Text] -> DbEff m ()
+
+dbEffToIO :: Member (Embed IO) r
+          => Sem (DbEff ': r) a -> Sem r a
+dbEffToIO = interpret $ \x ->
+  case x of
+    InsertWords user words -> embed $ insertWords' user words
+
+type MsgListener a = forall r.
+  (Members '[DiscordEff, Reader CmdInfo, Fail] r, Members a r) => Sem r ()
 
 bootstrapBot :: IO ()
 bootstrapBot = do
   token <- T.pack <$> getEnv "MARVIN_TOKEN"
+  runMarvinDbMigration
   userFacingError <- runDiscord $ def { discordToken = token
                                       , discordOnEvent = eventHandler }
   TIO.putStrLn userFacingError
@@ -66,11 +75,12 @@ eventHandler event =
     MessageCreate m -> when (not (fromBot m))
       $ runM
       . embedToMonadIO @DiscordHandler
+      . dbEffToIO
       . discordEffToHandler
       $ handleMessage m
     _ -> pure ()
 
-handleMessage :: Members '[DiscordEff, Embed IO] r
+handleMessage :: Members '[Embed IO, DiscordEff] r
               => Message -> Sem r ()
 handleMessage m = do
   let commands =
@@ -82,9 +92,8 @@ handleMessage m = do
         ]
   case nomPrefix $ messageText m of
     Just query ->
-      case T.words query of
-        (name:args) -> () <$ choice (runReader (CmdInfo m name args) <$> commands)
-        _           -> pure ()
+      let (name:args) = T.words query in
+      sequence_ $ (runReader (CmdInfo m name args) . runFail) <$> commands
     _ -> pure ()
   where
     nomPrefix :: Text -> Maybe Text
@@ -106,14 +115,13 @@ gaurdName expected = do
   actual <- view name <$> ask
   gaurd $ expected == T.toLower actual
 
-respondShuffle :: Command '[Embed IO]
+respondShuffle :: MsgListener '[Embed IO]
 respondShuffle = do
   gaurdName "shuffle"
-  m        <- view name <$> ask
   shuffled <- view args <$> ask >>= shuffle
   sendText (T.intercalate "\n" $ ("- " <>) <$> shuffled)
 
-respondDontLikeThat :: Command '[]
+respondDontLikeThat :: MsgListener '[]
 respondDontLikeThat = do
   name <- view name <$> ask
   args <- view args <$> ask
@@ -121,7 +129,7 @@ respondDontLikeThat = do
 
   sendText "I'm very sorry to hear that :cry:"
 
-respondGroupBy :: Command '[Embed IO]
+respondGroupBy :: MsgListener '[Embed IO]
 respondGroupBy = finish "groupby" "<number> ..." $ do
   args <- view args <$> ask
 
@@ -151,7 +159,7 @@ respondGroupBy = finish "groupby" "<number> ..." $ do
       let (ys, zs) = splitAt (d + 1) l
       in  ys : chunk' d (r - 1) zs
 
-respondRoll :: Command '[Embed IO]
+respondRoll :: MsgListener '[Embed IO]
 respondRoll = finish "roll" "<number>" $ do
   args <- view args <$> ask
 
@@ -168,7 +176,7 @@ respondRoll = finish "roll" "<number>" $ do
       then T.tail t
       else t
 
-respondFlip :: Command '[Embed IO]
+respondFlip :: MsgListener '[Embed IO]
 respondFlip = finish "flip" "" $ do
   args <- view args <$> ask
 
@@ -188,10 +196,6 @@ finish name usage action = do
   res <- runFail action
   when (isLeft res) $ sendText $ "**Usage:** `" <> name <> " " <> usage <> "`"
   pure ()
-
-choice :: [Sem (Fail ': r) a] -> Sem r (Either String a)
-choice [] = pure $ Left "o no"
-choice (x:xs) = liftA2 (<|>) (runFail x) (choice xs)
 
 react :: Members '[DiscordEff, Reader CmdInfo] r => Text -> Sem r ()
 react reaction = do

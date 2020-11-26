@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 23dda4505a5ecbac4efe3e25d17ae2162bcb6e19102a40259de418841d47b28c
+-- hash: c9c205a940e31b3c884d8472b1b2b7e4302cbc38b5d7d8a2680174abd5775c84
 
 name:           marvin
 version:        0.1.0.0
@@ -27,22 +27,28 @@ source-repository head
 
 library
   exposed-modules:
+      Database
       Lib
   other-modules:
       Paths_marvin
   hs-source-dirs:
       src
-  default-extensions: DataKinds FlexibleContexts GADTs LambdaCase PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeOperators TypeFamilies
+  default-extensions: DataKinds FlexibleContexts GADTs LambdaCase PolyKinds RankNTypes ScopedTypeVariables TypeApplications TypeOperators TypeFamilies OverloadedStrings TemplateHaskell
   build-depends:
       base >=4.13
     , discord-haskell
     , lens
+    , persistent
+    , persistent-sqlite
+    , persistent-template
     , polysemy
     , polysemy-plugin
     , random
     , text
+    , time
     , transformers
     , unliftio
+    , unordered-containers
   default-language: Haskell2010
 
 executable marvin-exe
@@ -57,12 +63,17 @@ executable marvin-exe
     , discord-haskell
     , lens
     , marvin
+    , persistent
+    , persistent-sqlite
+    , persistent-template
     , polysemy
     , polysemy-plugin
     , random
     , text
+    , time
     , transformers
     , unliftio
+    , unordered-containers
   default-language: Haskell2010
 
 test-suite marvin-test
@@ -78,10 +89,15 @@ test-suite marvin-test
     , discord-haskell
     , lens
     , marvin
+    , persistent
+    , persistent-sqlite
+    , persistent-template
     , polysemy
     , polysemy-plugin
     , random
     , text
+    , time
     , transformers
     , unliftio
+    , unordered-containers
   default-language: Haskell2010

@@ -27,8 +27,13 @@ dependencies:
 - lens
 - random
 - transformers
+- unordered-containers
 - polysemy
 - polysemy-plugin
+- persistent
+- persistent-sqlite
+- persistent-template
+- time
 
 library:
   source-dirs: src
@@ -43,6 +48,8 @@ library:
     - TypeApplications
     - TypeOperators
     - TypeFamilies
+    - OverloadedStrings
+    - TemplateHaskell
 
 executables:
   marvin-exe:

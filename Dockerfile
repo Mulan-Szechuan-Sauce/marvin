@@ -1,13 +1,12 @@
-FROM fpco/stack-build:latest
+FROM ubuntu:18.04 as app
 
-# Download the stack-docker-image-build executable and make it executable
-RUN curl -L https://github.com/fpco/stack-docker-image-build/releases/download/v0.1.0.0/stack-docker-image-build > /usr/local/bin/stack-docker-image-build && chmod +x /usr/local/bin/stack-docker-image-build
+RUN apt-get update && apt-get install -y curl
 
-# Copy over our source directory, which must include the stack.yaml file and
-# all local packages
-ADD ./ /src
+RUN mkdir -p /opt/app
+WORKDIR /opt/app
 
-# Kick off the build. This must be run from the directory containing the
-# stack.yaml file (thus the cd /src). The executable will take care of
-# everything else.
-RUN cd /src && /usr/local/bin/stack-docker-image-build
+COPY marvin-exe .
+
+CMD ["/opt/app/marvin-exe"]
+
+
